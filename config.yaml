@@ -1,0 +1,13 @@
+system:
+  host: 127.0.0.1
+  port: 8080
+
+file:
+  path: D:/test
+
+gorm:
+  host: 127.0.0.1
+  port: 3306
+  db: file
+  user: root
+  password: 123456

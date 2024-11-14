@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>分片上传</title>
+    </head>
+    <style>
+        .ul {
+            margin: 0;
+            padding: 0;
+            max-width: 500px;
+        }
+        .ul li {
+            list-style: none;
+            margin: 10px 0;
+            padding: 10px;
+            cursor: pointer;
+            border: 1px solid #ccc;
+        }
+    </style>
+    <body>
+        <input type="file" name="file" id="file" />
+        <button id="btn">合并</button>
+        <button id="btn2">获取上传列表</button>
+        <p>未完成</p>
+        <ul class="ul" id="ul1"></ul>
+        <p>已完成</p>
+        <ul class="ul" id="ul2"></ul>
+        <script>
+            var chunkSize = 1024 * 1024 * 1; // 1MB
+            var fp = document.getElementById("file");
+            var file, fileName, fileSize, fileType, sourcePath, chunkNum;
+            fp.addEventListener("change", upload);
+            function upload(e) {
+                file = e.target.files[0];
+                console.log(file);
+                fileName = file.name;
+                fileSize = file.size;
+                fileType = file.type;
+                let chunksMap = new Map();
+                // 分片数量
+                chunkNum = Math.ceil(file.size / chunkSize);
+                for (let i = 1; i <= chunkNum; i++) {
+                    chunksMap.set(i, file.slice((i - 1) * chunkSize, i * chunkSize));
+                }
+                fetch("http://127.0.0.1:8080/startUpload", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        fileName: fileName,
+                        type: fileType,
+                        size: fileSize,
+                        sliceCount: chunkNum,
+                        userId: "1", //上传的用户id
+                    }),
+                })
+                    .then((res) => {
+                        if (!res.ok) {
+                            throw new Error("网络响应不是ok");
+                        }
+                        return res.json();
+                    })
+                    .then((data) => {
+                        console.log("start:", data); // 处理上传成功后的逻辑
+                        fileName = data.data.fileName;
+                        sourcePath = data.data.filePath;
+                        fileId = data.data.id;
+                        // 上传缺少的切片
+                        if (data.code === 2000) {
+                            for (let [key, value] of chunksMap.entries()) {
+                                if (data.list.indexOf(key) != -1) {
+                                    let fd = new FormData();
+                                    fd.append("file", value);
+                                    fd.append("fileName", fileName);
+                                    fd.append("index", key);
+                                    fd.append("sourcePath", sourcePath);
+                                    fd.append("id", fileId);
+                                    fetch("http://127.0.0.1:8080/upload", {
+                                        method: "POST",
+                                        body: fd,
+                                    })
+                                        .then((res) => {
+                                            if (!res.ok) {
+                                                throw new Error("网络响应不是ok");
+                                            }
+                                            return res.json();
+                                        })
+                                        .then((data) => {
+                                            console.log("uploading:", data); // 处理上传成功后的逻辑
+                                        })
+                                        .catch((error) => {
+                                            console.error("上传失败:", error); // 处理上传失败后的逻辑
+                                        });
+                                }
+                            }
+                        } else {
+                            //上传文件
+                            for (let [key, value] of chunksMap.entries()) {
+                                let fd = new FormData();
+                                fd.append("file", value);
+                                fd.append("fileName", fileName);
+                                fd.append("index", key);
+                                fd.append("sourcePath", sourcePath);
+                                fd.append("id", fileId);
+                                fetch("http://127.0.0.1:8080/upload", {
+                                    method: "POST",
+                                    body: fd,
+                                })
+                                    .then((res) => {
+                                        if (!res.ok) {
+                                            throw new Error("网络响应不是ok");
+                                        }
+                                        return res.json();
+                                    })
+                                    .then((data) => {
+                                        console.log("uploading:", data); // 处理上传成功后的逻辑
+                                    })
+                                    .catch((error) => {
+                                        console.error("上传失败:", error); // 处理上传失败后的逻辑
+                                    });
+                            }
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("上传失败:", error); // 处理上传失败后的逻辑
+                    });
+            }
+
+            var btn = document.getElementById("btn");
+            btn.addEventListener("click", merge);
+            function merge(e) {
+                fetch("http://127.0.0.1:8080/endtUpload", {
+                    method: "POST",
+                    body: JSON.stringify({
+                        fileName: fileName,
+                        type: fileType,
+                        size: fileSize,
+                        sliceCount: chunkNum,
+                        userId: "1", //上传的用户id
+                    }),
+                })
+                    .then((res) => {
+                        if (!res.ok) {
+                            throw new Error("网络响应不是ok");
+                        }
+                        return res.json();
+                    })
+                    .then((data) => {
+                        console.log("end", data);
+                    })
+                    .catch((error) => {
+                        console.error("验证失败:", error); // 处理上传失败后的逻辑
+                    });
+            }
+            var btn2 = document.getElementById("btn2");
+            btn2.addEventListener("click", getList);
+            function getList(e) {
+                const params = new URLSearchParams({
+                    userId: "1", //上传的用户id
+                });
+                fetch(`http://127.0.0.1:8080/list?${params.toString()}`, {
+                    method: "GET",
+                })
+                    .then((res) => {
+                        if (!res.ok) {
+                            throw new Error("网络响应不是ok");
+                        }
+                        return res.json();
+                    })
+                    .then((data) => {
+                        console.log("list", data);
+                        //根据返回的数据判断已上传的文件列表以及上传部分的文件
+                        let ul1 = document.getElementById("ul1");
+                        let ul2 = document.getElementById("ul2");
+                        ul1.innerHTML = "";
+                        ul2.innerHTML = "";
+                        for (let item of data.data) {
+                            let li = document.createElement("li");
+                            let process = "";
+                            if (item.fileChunkModel.length > 0) {
+                                process = (item.fileChunkModel.length / item.sliceCount).toFixed(2) * 100 + "%";
+                                li.innerHTML = `${item.fileName}(${process})`;
+                                ul1.appendChild(li);
+                            } else {
+                                process = "100%";
+                                li.innerHTML = `${item.fileName}(${process})`;
+                                ul2.appendChild(li);
+                            }
+                        }
+                    })
+                    .catch((error) => {
+                        console.error("验证失败:", error); // 处理上传失败后的逻辑
+                    });
+            }
+        </script>
+    </body>
+</html>
